@@ -270,7 +270,7 @@ namespace CustomTCPServerLibrary.BaseEntities
             if (endPoint is null
                 || endPoint.Address is null)
             {
-                client = new TcpClient();
+                client = new TcpClient(AddressFamily.InterNetwork);
             }
             else
             {
