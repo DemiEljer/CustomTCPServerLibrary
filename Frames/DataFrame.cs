@@ -1,3 +1,4 @@
+using BinarySerializerLibrary.Attributes;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,6 +12,7 @@ namespace CustomTCPServerLibrary.Frames
         /// <summary>
         /// Данные кадра
         /// </summary>
+        [BinaryTypeUInt(8, BinarySerializerLibrary.Enums.BinaryArgumentTypeEnum.Array)]
         public byte[]? Data { get; set; }
         /// <summary>
         /// Создать кадр

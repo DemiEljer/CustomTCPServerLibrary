@@ -13,14 +13,20 @@ namespace CustomTCPServerLibrary.Frames
     {
         public static BaseFrame CreateDataFrame(byte[]? data)
         {
-            return BaseFrame.CreateFrame(FrameCodeEnum.DataFrame, FrameReqResType.Request, data);
+            var baseFrame = BaseFrame.CreateFrame(FrameCodeEnum.DataFrame, FrameReqResType.Request);
+
+            baseFrame.Body.Data = DataFrame.CreateFrame(data);
+
+            return baseFrame;
         }
 
         public static BaseFrame CreatePingClientToServerFrame(long clientTime)
         {
-            byte[] data = BinarySerializer.Serialize(PingClientToServerFrame.CreateFrame(clientTime));
+            var baseFrame = BaseFrame.CreateFrame(FrameCodeEnum.PingClientToServer, FrameReqResType.Request);
 
-            return BaseFrame.CreateFrame(FrameCodeEnum.PingClientToServer, FrameReqResType.Request, data);
+            baseFrame.Body.PingClientToServer = PingClientToServerFrame.CreateFrame(clientTime);
+
+            return baseFrame;
         }
 
         public static BaseFrame CreatePingServerToClientFrame(
@@ -30,14 +36,16 @@ namespace CustomTCPServerLibrary.Frames
             , int pingInterval
             , int pingTimeout)
         {
-            byte[] data = BinarySerializer.Serialize(PingServerToClientFrame.CreateFrame(
+            var baseFrame = BaseFrame.CreateFrame(FrameCodeEnum.PingServerToClient, FrameReqResType.Request);
+
+            baseFrame.Body.PingServerToClient = PingServerToClientFrame.CreateFrame(
                 sendingTimeout
                 , receivingTimeout
                 , serverTime
                 , pingInterval
-                , pingTimeout));
+                , pingTimeout);
 
-            return BaseFrame.CreateFrame(FrameCodeEnum.PingServerToClient, FrameReqResType.Request, data);
+            return baseFrame;
         }
 
         public static object? ParseFrame(byte[] data)
@@ -48,9 +56,9 @@ namespace CustomTCPServerLibrary.Frames
             {
                 switch ((FrameCodeEnum)baseFrame.FrameCode)
                 {
-                    case FrameCodeEnum.DataFrame: return DataFrame.CreateFrame(baseFrame.Body);
-                    case FrameCodeEnum.PingServerToClient: return BinarySerializer.Deserialize<PingServerToClientFrame>(baseFrame.Body);
-                    case FrameCodeEnum.PingClientToServer: return BinarySerializer.Deserialize<PingClientToServerFrame>(baseFrame.Body);
+                    case FrameCodeEnum.DataFrame: return baseFrame.Body.Data;
+                    case FrameCodeEnum.PingServerToClient: return baseFrame.Body.PingServerToClient;
+                    case FrameCodeEnum.PingClientToServer: return baseFrame.Body.PingClientToServer;
                     default: return null;
                 }
             }

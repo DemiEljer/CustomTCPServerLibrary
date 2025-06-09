@@ -31,8 +31,8 @@ namespace CustomTCPServerLibrary.Frames
         /// <summary>
         /// Тело запроса
         /// </summary>
-        [BinaryTypeUInt(8, BinarySerializerLibrary.Enums.BinaryArgumentTypeEnum.Array)]
-        public byte[]? Body { get; set; }
+        [BinaryTypeObject()]
+        public BaseFrameBody Body { get; set; } = new BaseFrameBody();
         /// <summary>
         /// Преобразование в вектор данных
         /// </summary>
@@ -48,13 +48,12 @@ namespace CustomTCPServerLibrary.Frames
         /// <param name="type"></param>
         /// <param name="body"></param>
         /// <returns></returns>
-        public static BaseFrame CreateFrame(FrameCodeEnum code, FrameReqResType type, byte[]? body)
+        public static BaseFrame CreateFrame(FrameCodeEnum code, FrameReqResType type)
         {
             return new BaseFrame()
             {
                 FrameCode = (byte)code,
                 FrameType = type,
-                Body = body
             };
         }
     }
