@@ -1,4 +1,4 @@
-﻿using BinarySerializerLibrary.Attributes;
+using BinarySerializerLibrary.Attributes;
 using System;
 using System.Collections.Generic;
 using System.Linq;

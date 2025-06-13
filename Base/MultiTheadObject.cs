@@ -47,34 +47,6 @@ namespace CustomTCPServerLibrary.Base
                 thread.Start();
             }
         }
-        /// <summary>
-        /// Удалить поток
-        /// </summary>
-        public async Task DisposeAsync()
-        {
-            foreach (var thread in _ObjectThreads)
-            {
-                thread.Dispose();
-            }
-
-            // Задача ожидания выключения всех потоков
-            Task killingTask = new Task(() =>
-            {
-                SpinWait waiter = new SpinWait();
-                while (_ObjectThreads.Count(thread => thread.IsActive) > 0)
-                {
-                    waiter.SpinOnce();
-                }
-            });
-
-            killingTask.Start();
-
-            await killingTask;
-
-            _ObjectThreads.Clear();
-
-            return;
-        }
 
         public void Dispose()
         {

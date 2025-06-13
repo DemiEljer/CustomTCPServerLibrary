@@ -2,6 +2,7 @@ using CustomTCPServerLibrary.Base;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -26,6 +27,10 @@ namespace CustomTCPServerLibrary.FinalStateMachines
         /// </summary>
         private TimeMarkObject _PingMessageReceivingTimeMark { get; } = new();
         /// <summary>
+        /// Флаг, что протокол валидный
+        /// </summary>
+        private bool? _IsProtocolValid { get; set; }
+        /// <summary>
         /// Запрос отправки сообщения Ping
         /// </summary>
         public event Action? CallPingMessageSending;
@@ -33,6 +38,14 @@ namespace CustomTCPServerLibrary.FinalStateMachines
         /// Запрос отправки сообщения Ping
         /// </summary>
         public event Action? CallPingWaitingTimeElapsed;
+        /// <summary>
+        /// Запрос отправки сообщения Ping
+        /// </summary>
+        public event Action? CallingProtocolIsNotValid;
+        /// <summary>
+        /// Подтверждение, что протокол валиден
+        /// </summary>
+        public bool IsProtocolValid => _IsProtocolValid == true;
 
         public void PingMessageHasBeenReceived()
         {
@@ -42,6 +55,7 @@ namespace CustomTCPServerLibrary.FinalStateMachines
         public void Start()
         {
             _PingMessageReceivingTimeMark.Update();
+            _IsProtocolValid = null;
         }
 
         public void Invoke()
@@ -57,6 +71,19 @@ namespace CustomTCPServerLibrary.FinalStateMachines
             if (_PingMessageReceivingTimeMark.HasIntervalElapsed(PingTimeout))
             {
                 CallPingWaitingTimeElapsed?.Invoke();
+            }
+        }
+
+        public void SetReceivingFramesValidFlag(bool isValid)
+        {
+            if (_IsProtocolValid is null)
+            {
+                _IsProtocolValid = isValid;
+
+                if (_IsProtocolValid == false)
+                {
+                    CallingProtocolIsNotValid?.Invoke();
+                }
             }
         }
     }

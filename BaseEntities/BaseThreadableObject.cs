@@ -97,10 +97,8 @@ namespace CustomTCPServerLibrary.BaseEntities
         /// <summary>
         /// Остановка работы сетевого объекта
         /// </summary>
-        public async void Stop()
+        public void Stop()
         {
-            Task threadsDisposingTask;
-
             lock (_LockObject)
             {
                 if (!IsActive)
@@ -110,14 +108,12 @@ namespace CustomTCPServerLibrary.BaseEntities
 
                 _Stop();
 
-                threadsDisposingTask = _ThreadsManager.DisposeAsync();
+                _ThreadsManager.Dispose();
 
                 HasStoppedEvent?.Invoke(this);
 
                 IsActive = false;
             }
-
-            await threadsDisposingTask;
         }
         /// <summary>
         /// Инициализация потоков
@@ -139,7 +135,7 @@ namespace CustomTCPServerLibrary.BaseEntities
             });
         }
         /// <summary>
-        /// Обработать логику в случае, если не активна
+        /// Обработать логику в случае, если объект неактивен
         /// </summary>
         protected void _HandleIfNotActive(Action? handler)
         {
@@ -155,6 +151,24 @@ namespace CustomTCPServerLibrary.BaseEntities
                     handler.Invoke();
                 }
 
+            }
+        }
+        /// <summary>
+        /// Обработать логику в случае, если объект активен
+        /// </summary>
+        protected void _HandleIfActive(Action? handler)
+        {
+            if (handler is null)
+            {
+                return;
+            }
+
+            lock (_LockObject)
+            {
+                if (IsActive)
+                {
+                    handler.Invoke();
+                }
             }
         }
 

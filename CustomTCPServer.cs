@@ -21,6 +21,10 @@ namespace CustomTCPServerLibrary
         /// </summary>
         public TimingConfigs Timings { get; } = new();
         /// <summary>
+        /// Параметры данных
+        /// </summary>
+        public DataConfigs DataConfigs { get; } = new();
+        /// <summary>
         /// Событие подключения клиента
         /// </summary>
         public event Action<CustomTCPServer, CustomTCPServerClient>? ClientHasConnectedEvent;
@@ -43,7 +47,14 @@ namespace CustomTCPServerLibrary
             {
                 foreach (var client in Clients)
                 {
-                    client.Timings.UpdateTimings(timings);
+                    client.Timings.Update(timings);
+                }
+            };
+            DataConfigs.UpdateEvent += (dataConfigs) =>
+            {
+                foreach (var client in Clients)
+                {
+                    client.DataConfigs.Update(dataConfigs);
                 }
             };
         }
@@ -65,27 +76,22 @@ namespace CustomTCPServerLibrary
             base._ThreadsInit();
 
             // Поток подтверждения установки соединения
-            _ThreadsManager.AddThread(async (token) =>
+            _ThreadsManager.AddThread((token) =>
             {
-                _Listener.GetInvoke(async (listener) =>
+                _Listener.GetInvoke((listener) =>
                 {
                     TcpClient? client = null;
 
-                    try
-                    {
-                        client = await listener.AcceptTcpClientAsync(token);
-                    }
-                    catch
-                    {
-                        return;
-                    }
+                    client = listener.AcceptTcpClient();
 
                     // Получается 
                     if (client != null && client.Client != null)
                     {
                         var customClient = new CustomTCPServerClient(client);
                         // Обновить параметры таймингов на стороне клиента
-                        customClient.Timings.UpdateTimings(Timings);
+                        customClient.Timings.Update(Timings);
+                        // Обновить параметры данных
+                        customClient.DataConfigs.Update(DataConfigs);
                         // Обработка события остановки работы клиента
                         customClient.HasStoppedEvent += (_client) =>
                         {

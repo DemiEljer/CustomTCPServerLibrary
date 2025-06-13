@@ -112,7 +112,7 @@ namespace CustomTCPServerLibrary.Configs
             UpdateEvent?.Invoke(this);
         }
 
-        public void UpdateTimings(TimingConfigs? timings)
+        public void Update(TimingConfigs? timings)
         {
             if (timings != null)
             {

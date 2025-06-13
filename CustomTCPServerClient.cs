@@ -1,4 +1,4 @@
-﻿using CustomTCPServerLibrary.Base;
+using CustomTCPServerLibrary.Base;
 using CustomTCPServerLibrary.BaseEntities;
 using CustomTCPServerLibrary.Frames;
 using System;
@@ -27,9 +27,9 @@ namespace CustomTCPServerLibrary
 
         internal CustomTCPServerClient(TcpClient client) : base((NetEndPoint)client.Client.RemoteEndPoint, client)
         {
-            InternalReceiveDataEvent += (_, data) =>
+            InternalReceiveDataEvent += (_, baseFrame) =>
             {
-                var frame = FramesFabric.ParseFrame(data);
+                var frame = FramesFabric.GetFrameBody(baseFrame);
 
                 if (frame is DataFrame)
                 {
@@ -52,21 +52,23 @@ namespace CustomTCPServerLibrary
                     if (_frame is not null)
                     {
                         ClientTime = _frame.ClientTime;
-                        PingTime = GetCurrentTime() - ClientTime;
+                        TimeShift = GetCurrentTime() - ClientTime;
+                        // Параметры меняются местами, из-за зеркальности буферов
+                        DataConfigs.ReceiveDataBufferSize = _frame.TransmitDataBufferSize;
 
                         _FinalStateMachine.PingMessageHasBeenReceived();
                     }
                 }
             };
 
-            InternalTransmitDataEvent += (_, data) =>
+            InternalTransmitDataEvent += (_, baseFrame) =>
             {
                 if (TransmitDataEvent is null)
                 {
                     return;
                 }
 
-                var frame = FramesFabric.ParseFrame(data);
+                var frame = FramesFabric.GetFrameBody(baseFrame);
 
                 if (frame is DataFrame)
                 {
@@ -88,6 +90,8 @@ namespace CustomTCPServerLibrary
                     , GetCurrentTime()
                     , Timings.PingInterval
                     , Timings.PingTimeout
+                    , DataConfigs.ReceiveDataBufferSize
+                    , DataConfigs.TransmitDataBufferSize
                 ));
             };
         }

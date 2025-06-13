@@ -36,9 +36,9 @@ namespace CustomTCPServerLibrary
 
         public CustomTCPClient(NetEndPoint? endPoint = null) : base(endPoint)
         {
-            InternalReceiveDataEvent += (_, data) =>
+            InternalReceiveDataEvent += (_, baseFrame) =>
             {
-                var frame = FramesFabric.ParseFrame(data);
+                var frame = FramesFabric.GetFrameBody(baseFrame);
 
                 if (frame is DataFrame)
                 {
@@ -61,26 +61,29 @@ namespace CustomTCPServerLibrary
                     if (_frame is not null)
                     {
                         ServerTime = _frame.ServerTime;
-                        PingTime = GetCurrentTime() - ServerTime;
+                        TimeShift = GetCurrentTime() - ServerTime;
 
                         Timings.ReceivingTimeout = _frame.ReceivingTimeout;
                         Timings.SendingTimeout = _frame.SendingTimeout;
                         Timings.PingInterval = _frame.PingInterval;
                         Timings.PingTimeout = _frame.PingTimeout;
+                        // Параметры меняются местами, из-за зеркальности буферов
+                        DataConfigs.ReceiveDataBufferSize = _frame.TransmitDataBufferSize;
+                        DataConfigs.TransmitDataBufferSize = _frame.ReceiveDataBufferSize;
 
                         _FinalStateMachine.PingMessageHasBeenReceived();
                     }
                 }
             };
 
-            InternalTransmitDataEvent += (_, data) =>
+            InternalTransmitDataEvent += (_, baseFrame) =>
             {
                 if (TransmitDataEvent is null)
                 {
                     return;
                 }
 
-                var frame = FramesFabric.ParseFrame(data);
+                var frame = FramesFabric.GetFrameBody(baseFrame);
 
                 if (frame is DataFrame)
                 {
@@ -98,6 +101,7 @@ namespace CustomTCPServerLibrary
                 InternalAddTransmittingData(FramesFabric.CreatePingClientToServerFrame
                 (
                     GetCurrentTime()
+                    , DataConfigs.TransmitDataBufferSize
                 ));
             };
         }
@@ -112,20 +116,20 @@ namespace CustomTCPServerLibrary
 
         protected override bool _Start()
         {
-            // Создание клиента
-            _SetClient(_GetClient(EndPoint));
             // Проверка, что клиент был создан и есть конечная точка подключения
-            if (Client is null
-                || ServerEndpoint is null)
+            if (ServerEndpoint is null)
             {
                 return false;
             }
 
-            base._Start();
+            var connectionInitStatus = _ConnectionController.Connect(_GetClient(EndPoint), ServerEndpoint);
 
-            Client.Connect(ServerEndpoint);
+            if (connectionInitStatus)
+            {
+                base._Start();
+            }
 
-            return true;
+            return connectionInitStatus;
         }
     }
 }

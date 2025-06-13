@@ -11,6 +11,7 @@ using CustomTCPServerLibrary.FinalStateMachines;
 using CustomTCPServerLibrary.Configs;
 using CustomTCPServerLibrary.Frames;
 using System.Net.Mail;
+using CustomTCPServerLibrary.Controllers;
 
 namespace CustomTCPServerLibrary.BaseEntities
 {
@@ -29,13 +30,17 @@ namespace CustomTCPServerLibrary.BaseEntities
         /// </summary>
         public TimingConfigs Timings { get; } = new();
         /// <summary>
-        /// Очередь отправляемых данных
+        /// Параметры данных
         /// </summary>
-        protected DataQueue _TransmitQueue { get; } = new();
+        public DataConfigs DataConfigs { get; } = new();
         /// <summary>
         /// Очередь отправляемых данных
         /// </summary>
-        protected DataQueue _ReceiveQueue { get; } = new();
+        protected DataQueue<BaseFrame> _TransmitQueue { get; } = new();
+        /// <summary>
+        /// Очередь отправляемых данных
+        /// </summary>
+        protected DataQueue<byte[]> _ReceiveQueue { get; } = new();
         /// <summary>
         /// Конечный автомат состояния клиента
         /// </summary>
@@ -43,15 +48,19 @@ namespace CustomTCPServerLibrary.BaseEntities
         /// <summary>
         /// Событие отправки данных
         /// </summary>
-        internal event Action<BaseTCPClient, byte[]>? InternalReceiveDataEvent;
+        internal event Action<BaseTCPClient, BaseFrame>? InternalReceiveDataEvent;
         /// <summary>
         /// Событие приема данных
         /// </summary>
-        internal event Action<BaseTCPClient, byte[]>? InternalTransmitDataEvent;
+        internal event Action<BaseTCPClient, BaseFrame>? InternalTransmitDataEvent;
         /// <summary>
-        /// Время задержки Ping
+        /// Событие возникновение ошибки при приеме сообщения
         /// </summary>
-        public long PingTime { get; protected set; } = 0;
+        public event Action<BaseTCPClient, Exception>? MessageReceiveThrowingEvent;
+        /// <summary>
+        /// Смещение времени между клиентом и сервером 
+        /// </summary>
+        public long TimeShift { get; protected set; } = 0;
         /// <summary>
         /// Объект блокировки
         /// </summary>
@@ -61,22 +70,32 @@ namespace CustomTCPServerLibrary.BaseEntities
         /// </summary>
         public bool IsConnected
         {
-            get 
+            get
             {
                 var client = Client;
 
                 return client is null ? false : client.Connected;
             }
         }
+        /// <summary>
+        /// Обработчик логики подключения
+        /// </summary>
+        protected TCPClientConnectionController _ConnectionController { get; } = new(); 
+        /// <summary>
+        /// Контроллер процесса отправки данных
+        /// </summary>
+        protected TCPStreamWriterController _StreamWriterController { get; } = new();
+        /// <summary>
+        /// Контроллер процесса чтения данных
+        /// </summary>
+        protected TCPClientStreamReaderController _StreamReaderController { get; } = new();
 
         protected BaseTCPClient(NetEndPoint? endPoint = null, TcpClient? client = null) : base(endPoint)
         {
             _SetClient(client);
             // Обработка ситуации, когда вышло время ожидания сообщения Ping
-            _FinalStateMachine.CallPingWaitingTimeElapsed += () =>
-            {
-                Stop();
-            };
+            _FinalStateMachine.CallPingWaitingTimeElapsed += () => Stop();
+            _FinalStateMachine.CallingProtocolIsNotValid += () => Stop();
             // Инициализация обработчика таймингов
             {
                 Timings.PingInterval = _FinalStateMachine.PingInterval;
@@ -84,61 +103,165 @@ namespace CustomTCPServerLibrary.BaseEntities
 
                 Timings.UpdateEvent += (timings) =>
                 {
+                    _FinalStateMachine.PingInterval = timings.PingInterval;
+                    _FinalStateMachine.PingTimeout = timings.PingTimeout;
+
                     _Client.GetInvoke((client) =>
                     {
                         if (client.Client is not null)
                         {
                             client.ReceiveTimeout = timings.ReceivingTimeout;
                             client.SendTimeout = timings.SendingTimeout;
+
+                            client.ReceiveBufferSize = 8000;
+                            client.SendBufferSize = 8000;
                         }
                     });
-                    _FinalStateMachine.PingInterval = timings.PingInterval;
-                    _FinalStateMachine.PingTimeout = timings.PingTimeout;
                 };
             }
+            // Инициализация обработчика параметров данных
+            {
+                DataConfigs.UpdateEvent += (dataConfigs) =>
+                {
+                    _Client.GetInvoke((client) =>
+                    {
+                        if (client.Client is not null)
+                        {
+                            client.ReceiveBufferSize = dataConfigs.ReceiveDataBufferSize;
+                            client.SendBufferSize = dataConfigs.TransmitDataBufferSize;
+                        }
+                    });
+                };
+            }
+            // Событие завершения процесса подключения клиента
+            _ConnectionController.ClientConnectionHasFinishedEvent += (_client) =>
+            {
+                if (_client is not null && _client.Connected)
+                {
+                    _SetClient(_client);
+                }
+                else
+                {
+                    _Stop();
+                }
+            };
+            // Событие завершения процесса отключения клиента
+            _ConnectionController.ClientDisconnectionHasFinishedEvent += (_) => _SetClient(null);
+
+            _StreamWriterController.InitNextDataGetter(() =>
+            {
+                // Получение массива данных без удаления
+                var txFrames = _TransmitData();
+
+                if (txFrames.data is not null)
+                {
+                    // Увеличение размера буфера в случае, если превыщен его размер
+                    if (txFrames.data.Length > DataConfigs.TransmitDataBufferSize)
+                    {
+                        DataConfigs.TransmitDataBufferSize = txFrames.data.Length;
+                    }
+                }
+
+                return txFrames;
+            });
+            // Событие отправки данных
+            _StreamWriterController.DataHasBeenTransmittedEvent += (data) =>
+            {
+                // Вызов события отправки данных
+                foreach (var frame in data.frames)
+                {
+                    InternalTransmitDataEvent?.Invoke(this, frame);
+                }
+
+                  _AcceptDataTransmitting(data.frames.Length);
+            };
+            // Инициализация делегата получения размера принятых данных
+            _StreamReaderController.InitDataLengthGetter(() =>
+            {
+                var client = Client;
+
+                if (client is not null)
+                {
+                    return client.Available;
+                }
+                else
+                {
+                    return 0;
+                }
+            });
+            // Событие приема данных
+            _StreamReaderController.DataHasBeenReceivedEvent += (data) =>
+            {
+                _ReceiveData(data);
+            };
         }
 
         protected void _SetClient(TcpClient? client)
         {
-            _HandleIfNotActive(() =>
+            _Client.SetInvoke(() =>
             {
-                _Client.SetInvoke(() =>
+                if (client is not null && client.Client is not null)
                 {
-                    if (client is not null && client.Client is not null)
-                    {
-                        // Инициализация обработчика таймингов
-                        Timings.ReceivingTimeout = client.ReceiveTimeout;
-                        Timings.SendingTimeout = client.SendTimeout;
-                    }
+                    // Инициализация обработчика таймингов
+                    Timings.ReceivingTimeout = client.ReceiveTimeout;
+                    Timings.SendingTimeout = client.SendTimeout;
+                    // Инициализация обработчика параметров данных
+                    DataConfigs.ReceiveDataBufferSize = client.ReceiveBufferSize;
+                    DataConfigs.TransmitDataBufferSize = client.SendBufferSize;
+                }
 
-                    return client;
-                });
+                _StreamWriterController.Stream = client?.GetStream();
+                _StreamReaderController.Stream = client?.GetStream();
+
+                return client;
             });
         }
         /// <summary>
         /// Отправить данные
         /// </summary>
         /// <param name="data"></param>
-        public void TransmitData(byte[]? data)
+        public bool TransmitData(byte[]? data)
         {
-            if (data != null)
+            if (data != null && _FinalStateMachine.IsProtocolValid)
             {
-                InternalAddTransmittingData(FramesFabric.CreateDataFrame(data));
+                return InternalAddTransmittingData(FramesFabric.CreateDataFrame(data));
+            }
+            else
+            {
+                return false;
             }
         }
         /// <summary>
         /// Добавить отправляемые данные
         /// </summary>
         /// <param name="data"></param>
-        internal void InternalAddTransmittingData(byte[] data)
-        {
-            _TransmitQueue.Push(data);
-        }
+        internal bool InternalAddTransmittingData(BaseFrame frame) => _TransmitQueue.Push(frame);
         /// <summary>
         /// Отправить данные
         /// </summary>
         /// <returns></returns>
-        private byte[]? _TransmitData(bool removeElement) => _TransmitQueue.Pop(removeElement);
+        private (byte[]? data, BaseFrame[] frames) _TransmitData()
+        {
+            var frameSequence = FramesFabric.CreateFrameSequence(_TransmitQueue.PopAll(false).ToArray());
+
+            if (frameSequence.Frames != null
+                && frameSequence.Frames.Length > 0)
+            {
+                return (frameSequence, frameSequence.Frames);
+            }
+            else
+            {
+                return (null, Array.Empty<BaseFrame>());
+            }
+        }
+        /// <summary>
+        /// Подтвердить отправку сообщений
+        /// </summary>
+        /// <param name="count"></param>
+        private void _AcceptDataTransmitting(int count)
+        {
+            _TransmitQueue.RemoveElementsFromHead(count);
+        }
         /// <summary>
         /// Принять данные
         /// </summary>
@@ -154,7 +277,9 @@ namespace CustomTCPServerLibrary.BaseEntities
             // Поток прекращения работы при разрыве соединения
             _ThreadsManager.AddThread((token) =>
             {
-                if (!IsConnected)
+                var client = Client;
+
+                if (client?.Connected == false)
                 {
                     Stop();
                 }
@@ -164,32 +289,9 @@ namespace CustomTCPServerLibrary.BaseEntities
             {
                 _Client.GetInvoke((client) =>
                 {
-                    // Получение массива данных без удаления
-                    var data = _TransmitData(false);
-
-                    if (data != null)
+                    if (client.Connected)
                     {
-                        bool transmittingFlag = false;
-
-                        lock (_DataHandlingLockObject)
-                        {
-                            var clientStream = client.GetStream();
-
-                            if (clientStream is not null)
-                            {
-                                clientStream.Write(data, 0, data.Length);
-
-                                transmittingFlag = true;
-                            }
-                        }
-
-                        if (transmittingFlag)
-                        {
-                            // Вызов события отправки данных
-                            InternalTransmitDataEvent?.Invoke(this, data);
-
-                            _TransmitData(true);
-                        }
+                        _StreamWriterController.TryTransmit();
                     }
                 });
             });
@@ -198,40 +300,36 @@ namespace CustomTCPServerLibrary.BaseEntities
             {
                 _Client.GetInvoke((client) =>
                 {
-                    if (client.Available > 0)
+                    if (client.Connected)
                     {
-                        byte[] data;
-                        bool receivingFlag = false;
-
-                        lock (_DataHandlingLockObject)
-                        {
-                            data = new byte[client.Available];
-
-                            var clientStream = client.GetStream();
-
-                            if (clientStream is not null)
-                            {
-                                clientStream.Read(data, 0, data.Length);
-
-                                receivingFlag = true;
-                            }
-                        }
-
-                        if (receivingFlag)
-                        {
-                            _ReceiveData(data);
-                        }
+                        _StreamReaderController.TryReceive();
                     }
                 });
             });
-            // Поток приема сообщений
+            // Поток парсинга принимаемых сообщений
             _ThreadsManager.AddThread((token) =>
             {
                 var data = _ReceiveQueue.Pop();
-                
+
                 if (data is not null)
                 {
-                    InternalReceiveDataEvent?.Invoke(this, data);
+                    bool areFramesValid;
+
+                    var frameSequences = FramesFabric.ParseFrameSequence(data, out areFramesValid);
+                    // Установка флага, что все принятые пакеты валидны
+                    _FinalStateMachine.SetReceivingFramesValidFlag(areFramesValid);
+
+                    foreach (var frame in FramesFabric.GetBaseFramesFromSequences(frameSequences))
+                    {
+                        try
+                        {
+                            InternalReceiveDataEvent?.Invoke(this, frame);
+                        }
+                        catch (Exception e)
+                        {
+                            MessageReceiveThrowingEvent?.Invoke(this, e);
+                        }
+                    }
                 }
             });
             // Поток логики
@@ -244,18 +342,28 @@ namespace CustomTCPServerLibrary.BaseEntities
         protected override bool _Start()
         {
             _FinalStateMachine.Start();
+            // Разблокировка очередей для записи
+            _ReceiveQueue.Unlock();
+            _TransmitQueue.Unlock();
+            // Блокировка возможности уменьшения буферов
+            DataConfigs.LockDecrease(true);
 
             return true;
         }
 
         protected override void _Stop()
         {
-            _TransmitQueue.Clear();
-            _ReceiveQueue.Clear();
+            _TransmitQueue.Clear(true);
+            _ReceiveQueue.Clear(true);
+            // Разблокировка возможности уменьшения буферов
+            DataConfigs.LockDecrease(false);
 
             lock (_DataHandlingLockObject)
             {
-                Client?.Close();
+                _Client.SafetyGetInvoke((client) =>
+                {
+                    _ConnectionController.Disconnect(client);
+                });
             }
         }
         /// <summary>

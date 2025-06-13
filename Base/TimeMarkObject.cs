@@ -31,5 +31,11 @@ namespace CustomTCPServerLibrary.Base
         /// <param name="interval"></param>
         /// <returns></returns>
         public bool HasIntervalElapsed(long interval) => TimeHandler.HasIntervalElapsed(TimeMark, interval);
+        /// <summary>
+        /// Найти разницу времени между двумя метками
+        /// </summary>
+        /// <param name="timeMark"></param>
+        /// <returns></returns>
+        public long DeltaTime(TimeMarkObject timeMark) => TimeMark - timeMark.TimeMark;
     }
 }
