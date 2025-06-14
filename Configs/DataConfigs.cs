@@ -21,6 +21,7 @@ namespace CustomTCPServerLibrary.Configs
                 {
                     value = Math.Max(value, _ReceiveDataBufferSize);
                 }
+                value = Math.Max(value, 256);
 
                 bool invokeEventUpdateEvent = false;
                 if (_ReceiveDataBufferSize != value)
@@ -50,6 +51,7 @@ namespace CustomTCPServerLibrary.Configs
                 {
                     value = Math.Max(value, _TransmitDataBufferSize);
                 }
+                value = Math.Max(value, 256);
 
                 bool invokeEventUpdateEvent = false;
                 if (_TransmitDataBufferSize != value)
@@ -58,6 +60,36 @@ namespace CustomTCPServerLibrary.Configs
                 }
 
                 _TransmitDataBufferSize = value;
+
+                if (invokeEventUpdateEvent)
+                {
+                    _InvokeUpdateEvent();
+                }
+            }
+        }
+
+        private int _BufferIncreaseFactor = 1;
+        /// <summary>
+        /// Множитель увеличения буфера в случае нехватки места для обработки посылки
+        /// </summary>
+        public int BufferIncreaseFactor
+        {
+            get => _BufferIncreaseFactor;
+            set
+            {
+                if (_IsDecreasedLock)
+                {
+                    value = Math.Max(value, _BufferIncreaseFactor);
+                }
+                value = Math.Max(value, 1);
+
+                bool invokeEventUpdateEvent = false;
+                if (_BufferIncreaseFactor != value)
+                {
+                    invokeEventUpdateEvent = true;
+                }
+
+                _BufferIncreaseFactor = value;
 
                 if (invokeEventUpdateEvent)
                 {

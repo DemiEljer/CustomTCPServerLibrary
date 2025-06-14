@@ -1,4 +1,5 @@
 using CustomTCPServerLibrary.Base;
+using CustomTCPServerLibrary.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -104,6 +105,10 @@ namespace CustomTCPServerLibrary.Controllers
         /// </summary>
         public bool IsDisconnecting => _DisconnectionRequest is not null;
         /// <summary>
+        /// Статус отключения клиента
+        /// </summary>
+        public ClientConnectionStatusEnum ConnectionStatus { get; private set; } = ClientConnectionStatusEnum.IsNotConnected;
+        /// <summary>
         /// Запрос на подключение
         /// </summary>
         private ClientConnectionRequest? _ConnectionRequest { get; set; } = null;
@@ -199,6 +204,26 @@ namespace CustomTCPServerLibrary.Controllers
                     }
                 }
             }
+        }
+        /// <summary>
+        /// Установить значение статуса подключения
+        /// </summary>
+        /// <param name="status"></param>
+        public void SetConnectionStatus(ClientConnectionStatusEnum status)
+        {
+            if (ConnectionStatus == ClientConnectionStatusEnum.IsNotConnected
+                || ConnectionStatus == ClientConnectionStatusEnum.IsConnected
+                || ConnectionStatus == ClientConnectionStatusEnum.ManualDisconnected)
+            {
+                ConnectionStatus = status;
+            }
+        }
+        /// <summary>
+        /// Сбросить значение статуса подключения
+        /// </summary>
+        public void ResetConnectionStatus()
+        {
+            ConnectionStatus = ClientConnectionStatusEnum.IsNotConnected;
         }
     }
 }

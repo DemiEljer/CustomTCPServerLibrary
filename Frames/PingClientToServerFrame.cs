@@ -20,13 +20,24 @@ namespace CustomTCPServerLibrary.Frames
         [BinaryTypeInt(32)]
         public int TransmitDataBufferSize { get; set; }
         /// <summary>
+        /// Размер буфера на прием
+        /// </summary>
+        [BinaryTypeInt(32)]
+        public int ReceiveDataBufferSize { get; set; }
+        /// <summary>
         /// Создать кадр
         /// </summary>
-        public static PingClientToServerFrame CreateFrame(long clientTime, int transmitDataBufferSize)
+        public static PingClientToServerFrame CreateFrame
+        (
+            long clientTime
+            , int receiveDataBufferSize
+            , int transmitDataBufferSize
+        )
         {
             return new PingClientToServerFrame()
             {
                 ClientTime = clientTime
+                , ReceiveDataBufferSize = receiveDataBufferSize
                 , TransmitDataBufferSize = transmitDataBufferSize
             };
         }

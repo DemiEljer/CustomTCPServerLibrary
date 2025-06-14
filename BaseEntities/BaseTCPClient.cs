@@ -12,6 +12,7 @@ using CustomTCPServerLibrary.Configs;
 using CustomTCPServerLibrary.Frames;
 using System.Net.Mail;
 using CustomTCPServerLibrary.Controllers;
+using CustomTCPServerLibrary.Enums;
 
 namespace CustomTCPServerLibrary.BaseEntities
 {
@@ -34,6 +35,10 @@ namespace CustomTCPServerLibrary.BaseEntities
         /// </summary>
         public DataConfigs DataConfigs { get; } = new();
         /// <summary>
+        /// Статус соединения
+        /// </summary>
+        public ClientConnectionStatusEnum ConnectionStatus => _ConnectionController.ConnectionStatus; 
+        /// <summary>
         /// Очередь отправляемых данных
         /// </summary>
         protected DataQueue<BaseFrame> _TransmitQueue { get; } = new();
@@ -44,7 +49,11 @@ namespace CustomTCPServerLibrary.BaseEntities
         /// <summary>
         /// Конечный автомат состояния клиента
         /// </summary>
-        protected ClientFinalStateMachine _FinalStateMachine { get; } = new ClientFinalStateMachine();
+        protected ClientFinalStateMachine _FinalStateMachine { get; } = new();
+        /// <summary>
+        /// Конечный автомат управления процессом отправки
+        /// </summary>
+        protected ClientTransmittingFinalStateMachine _TransmittingFinalStateMachine { get; } = new();
         /// <summary>
         /// Событие отправки данных
         /// </summary>
@@ -56,7 +65,11 @@ namespace CustomTCPServerLibrary.BaseEntities
         /// <summary>
         /// Событие возникновение ошибки при приеме сообщения
         /// </summary>
-        public event Action<BaseTCPClient, Exception>? MessageReceiveThrowingEvent;
+        public event Action<BaseTCPClient, Exception>? MessageReceiveExceptionThrowingEvent;
+        /// <summary>
+        /// Событие возникновение ошибки при приеме сообщения
+        /// </summary>
+        public event Action<BaseTCPClient>? ProtocolHasBeenVerifiedEvent;
         /// <summary>
         /// Смещение времени между клиентом и сервером 
         /// </summary>
@@ -93,9 +106,36 @@ namespace CustomTCPServerLibrary.BaseEntities
         protected BaseTCPClient(NetEndPoint? endPoint = null, TcpClient? client = null) : base(endPoint)
         {
             _SetClient(client);
+
             // Обработка ситуации, когда вышло время ожидания сообщения Ping
-            _FinalStateMachine.CallPingWaitingTimeElapsed += () => Stop();
-            _FinalStateMachine.CallingProtocolIsNotValid += () => Stop();
+            _FinalStateMachine.ProtocolHasBeenVerifiedEvent += () => ProtocolHasBeenVerifiedEvent?.Invoke(this);
+            _FinalStateMachine.CallPingWaitingTimeElapsed += () =>
+            {
+                _ConnectionController.SetConnectionStatus(Enums.ClientConnectionStatusEnum.PingTimeoutHasBeenElapsed);
+
+                Stop();
+            };
+            _FinalStateMachine.CallingProtocolIsNotValid += () =>
+            {
+                _ConnectionController.SetConnectionStatus(Enums.ClientConnectionStatusEnum.ProtocolValidationHasFailed);
+
+                Stop();
+            };
+            _FinalStateMachine.CallPingMessageSending += () =>
+            {
+                InternalAddTransmittingData(_GetPingFrame());
+            };
+
+            // Обработка событий возникновения ошибок
+            StartingExceptionThrowingEvent += (_, _) =>
+            {
+                _ConnectionController.SetConnectionStatus(Enums.ClientConnectionStatusEnum.StartingException);
+            };
+            StartingExceptionThrowingEvent += (_, _) =>
+            {
+                _ConnectionController.SetConnectionStatus(Enums.ClientConnectionStatusEnum.InThreadException);
+            };
+
             // Инициализация обработчика таймингов
             {
                 Timings.PingInterval = _FinalStateMachine.PingInterval;
@@ -123,6 +163,8 @@ namespace CustomTCPServerLibrary.BaseEntities
             {
                 DataConfigs.UpdateEvent += (dataConfigs) =>
                 {
+                    _TransmittingFinalStateMachine.BufferIncreaseFactor = dataConfigs.BufferIncreaseFactor;
+
                     _Client.GetInvoke((client) =>
                     {
                         if (client.Client is not null)
@@ -139,27 +181,52 @@ namespace CustomTCPServerLibrary.BaseEntities
                 if (_client is not null && _client.Connected)
                 {
                     _SetClient(_client);
+
+                    _ConnectionController.SetConnectionStatus(Enums.ClientConnectionStatusEnum.IsConnected);
                 }
                 else
                 {
-                    _Stop();
+                    _ConnectionController.SetConnectionStatus(Enums.ClientConnectionStatusEnum.ConnectionError);
+
+                    Stop();
                 }
             };
             // Событие завершения процесса отключения клиента
-            _ConnectionController.ClientDisconnectionHasFinishedEvent += (_) => _SetClient(null);
+            _ConnectionController.ClientDisconnectionHasFinishedEvent += (_) =>
+            {
+                _SetClient(null);
+
+                _ConnectionController.SetConnectionStatus(Enums.ClientConnectionStatusEnum.ManualDisconnected);
+            };
 
             _StreamWriterController.InitNextDataGetter(() =>
             {
-                // Получение массива данных без удаления
-                var txFrames = _TransmitData();
+                (byte[]? data, BaseFrame[] frames) txFrames = _TransmittingFinalStateMachine.EmptyTransmittingData;
 
-                if (txFrames.data is not null)
+                switch (_TransmittingFinalStateMachine.State)
                 {
-                    // Увеличение размера буфера в случае, если превыщен его размер
-                    if (txFrames.data.Length > DataConfigs.TransmitDataBufferSize)
-                    {
-                        DataConfigs.TransmitDataBufferSize = txFrames.data.Length;
-                    }
+                    case Enums.ClientTransmittingState.Ordinary:
+                        txFrames = _TransmitData();
+
+                        if (txFrames.data != null 
+                            && _TransmittingFinalStateMachine.CheckIfBufferSizeSuitable(DataConfigs.TransmitDataBufferSize, txFrames.data.Length) == false)
+                        {
+                            // Увеличение буфера для отправки данных
+                            DataConfigs.TransmitDataBufferSize = _TransmittingFinalStateMachine.GetTargetTransmitBufferSize(txFrames.data.Length);
+                            // Сохранение отсроченных к отправке данных
+                            _TransmittingFinalStateMachine.SetDeferredData(txFrames);
+                            // Подтверждение отсроченных к отправке данных
+                            _AcceptDataTransmitting(txFrames.frames.Length);
+
+                            txFrames = _TransmitData(_GetPingFrame());
+                        }
+                        break;
+
+                    case Enums.ClientTransmittingState.DeferredDataTransmit:
+                        txFrames = _TransmittingFinalStateMachine.GetDeferredData();
+                        break;
+
+                    default: break;
                 }
 
                 return txFrames;
@@ -173,7 +240,17 @@ namespace CustomTCPServerLibrary.BaseEntities
                     InternalTransmitDataEvent?.Invoke(this, frame);
                 }
 
-                  _AcceptDataTransmitting(data.frames.Length);
+                switch (_TransmittingFinalStateMachine.State)
+                {
+                    case Enums.ClientTransmittingState.Ordinary:
+                        _AcceptDataTransmitting(data.frames.Length);
+                        break;
+                    case Enums.ClientTransmittingState.DeferredDataTransmit:
+                        _TransmittingFinalStateMachine.ClearDeferredData();
+                        break;
+
+                    default: break;
+                }
             };
             // Инициализация делегата получения размера принятых данных
             _StreamReaderController.InitDataLengthGetter(() =>
@@ -240,9 +317,18 @@ namespace CustomTCPServerLibrary.BaseEntities
         /// Отправить данные
         /// </summary>
         /// <returns></returns>
-        private (byte[]? data, BaseFrame[] frames) _TransmitData()
+        private (byte[]? data, BaseFrame[] frames) _TransmitData(BaseFrame? concreteFrame = null)
         {
-            var frameSequence = FramesFabric.CreateFrameSequence(_TransmitQueue.PopAll(false).ToArray());
+            BaseFrameSequence frameSequence;
+
+            if (concreteFrame is null)
+            {
+                frameSequence = FramesFabric.CreateFrameSequence(_TransmitQueue.PopAll(false).ToArray());
+            }
+            else
+            {
+                frameSequence = FramesFabric.CreateFrameSequence(new BaseFrame[] { concreteFrame });
+            }
 
             if (frameSequence.Frames != null
                 && frameSequence.Frames.Length > 0)
@@ -281,6 +367,8 @@ namespace CustomTCPServerLibrary.BaseEntities
 
                 if (client?.Connected == false)
                 {
+                    _ConnectionController.SetConnectionStatus(Enums.ClientConnectionStatusEnum.ConnectionFlagHasBeenResetted);
+
                     Stop();
                 }
             });
@@ -327,7 +415,7 @@ namespace CustomTCPServerLibrary.BaseEntities
                         }
                         catch (Exception e)
                         {
-                            MessageReceiveThrowingEvent?.Invoke(this, e);
+                            MessageReceiveExceptionThrowingEvent?.Invoke(this, e);
                         }
                     }
                 }
@@ -347,6 +435,12 @@ namespace CustomTCPServerLibrary.BaseEntities
             _TransmitQueue.Unlock();
             // Блокировка возможности уменьшения буферов
             DataConfigs.LockDecrease(true);
+            // Обработка статуса подулючения
+            // Подтверждение подключения
+            if (Client?.Connected == true)
+            {
+                _ConnectionController.SetConnectionStatus(Enums.ClientConnectionStatusEnum.IsConnected);
+            }
 
             return true;
         }
@@ -357,6 +451,8 @@ namespace CustomTCPServerLibrary.BaseEntities
             _ReceiveQueue.Clear(true);
             // Разблокировка возможности уменьшения буферов
             DataConfigs.LockDecrease(false);
+            // Сброс конечного автомата отправки пакетов
+            _TransmittingFinalStateMachine.Reset();
 
             lock (_DataHandlingLockObject)
             {
@@ -387,5 +483,10 @@ namespace CustomTCPServerLibrary.BaseEntities
 
             return client;
         }
+        /// <summary>
+        /// Получить объект кадра пинга
+        /// </summary>
+        /// <returns></returns>
+        protected abstract BaseFrame _GetPingFrame();
     }
 }

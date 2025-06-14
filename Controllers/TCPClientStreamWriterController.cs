@@ -1,3 +1,4 @@
+using CustomTCPServerLibrary.Enums;
 using CustomTCPServerLibrary.Frames;
 using System;
 using System.Collections.Generic;

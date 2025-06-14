@@ -22,39 +22,50 @@ namespace CustomTCPServerLibrary.Frames
             return baseFrame;
         }
 
-        public static BaseFrame CreatePingClientToServerFrame(long clientTime, int transmitDataBufferSize)
+        public static BaseFrame CreatePingClientToServerFrame
+        (
+            long clientTime
+            , int receiveDataBufferSize
+            , int transmitDataBufferSize
+        )
         {
             var baseFrame = BaseFrame.CreateFrame(FrameCodeEnum.PingClientToServer, FrameReqResType.Request);
 
-            baseFrame.Body.PingClientToServer = PingClientToServerFrame.CreateFrame(clientTime, transmitDataBufferSize);
+            baseFrame.Body.PingClientToServer = PingClientToServerFrame.CreateFrame(clientTime, receiveDataBufferSize, transmitDataBufferSize);
 
             return baseFrame;
         }
 
-        public static BaseFrame CreatePingServerToClientFrame(
+        public static BaseFrame CreatePingServerToClientFrame
+        (
             int sendingTimeout
             , int receivingTimeout
             , long serverTime
             , int pingInterval
             , int pingTimeout
             , int receiveDataBufferSize
-            , int transmitDataBufferSize)
+            , int transmitDataBufferSize
+            , int bufferIncreaseFactor
+        )
         {
             var baseFrame = BaseFrame.CreateFrame(FrameCodeEnum.PingServerToClient, FrameReqResType.Request);
 
-            baseFrame.Body.PingServerToClient = PingServerToClientFrame.CreateFrame(
+            baseFrame.Body.PingServerToClient = PingServerToClientFrame.CreateFrame
+            (
                 sendingTimeout
                 , receivingTimeout
                 , serverTime
                 , pingInterval
                 , pingTimeout
                 , receiveDataBufferSize
-                , transmitDataBufferSize);
+                , transmitDataBufferSize
+                , bufferIncreaseFactor
+            );
 
             return baseFrame;
         }
         /// <summary>
-        /// ������ ���������� ������������������� ������
+        /// Объект индексации номеров последовательностей кадров
         /// </summary>
         private static SafeIndexer _FrameSequenceCodeIndexer { get; } = new();
 
@@ -116,12 +127,9 @@ namespace CustomTCPServerLibrary.Frames
             {
                 BinaryArrayReader reader = new BinaryArrayReader(data);
 
-                // �������������� ��������, ����� ��������� ������������������� ��������� � ������ (�������� �� ���� ���)
+                // Обработка сценария, когда несколько последовательностей кадров скопилось в буфере (принимаются одновременно)
                 while (!reader.IsEndOfArray)
                 {
-                    // �������� ������������ ��� ��������� ����������� �������������������
-                    reader.MakeAlignment(BinarySerializerLibrary.Enums.AlignmentTypeEnum.ByteAlignment);
-
                     var frameSequence = BinarySerializer.Deserialize<BaseFrameSequence>(reader);
 
                     if (frameSequence is not null
@@ -137,6 +145,8 @@ namespace CustomTCPServerLibrary.Frames
                     {
                         yield return null;
                     }
+                    // Выравнивание в рамках читаемого массива
+                    reader.MakeAlignment(BinarySerializerLibrary.Enums.BinaryAlignmentTypeEnum.ByteAlignment);
                 }
             }
 

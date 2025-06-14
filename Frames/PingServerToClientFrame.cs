@@ -41,6 +41,11 @@ namespace CustomTCPServerLibrary.Frames
         [BinaryTypeInt(32)]
         public int TransmitDataBufferSize { get; set; }
         /// <summary>
+        /// Множитель увеличения буфера в случае нехватки места
+        /// </summary>
+        [BinaryTypeInt(32)]
+        public int BufferIncreaseFactor = 1;
+        /// <summary>
         /// Текущее время сервера
         /// </summary>
         [BinaryTypeInt(64)]
@@ -48,14 +53,17 @@ namespace CustomTCPServerLibrary.Frames
         /// <summary>
         /// Создать кадр
         /// </summary>
-        public static PingServerToClientFrame CreateFrame(
+        public static PingServerToClientFrame CreateFrame
+        (
             int sendingTimeout
             , int receivingTimeout
             , long serverTime
             , int pingInterval
             , int pingTimeout
             , int receiveDataBufferSize
-            , int transmitDataBufferSize)
+            , int transmitDataBufferSize
+            , int bufferIncreaseFactor
+        )
         {
             return new PingServerToClientFrame()
             {
@@ -66,6 +74,7 @@ namespace CustomTCPServerLibrary.Frames
                 , PingTimeout = pingTimeout
                 , ReceiveDataBufferSize = receiveDataBufferSize
                 , TransmitDataBufferSize = transmitDataBufferSize
+                , BufferIncreaseFactor = bufferIncreaseFactor
             };
         }
     }

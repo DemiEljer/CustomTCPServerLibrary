@@ -30,6 +30,10 @@ namespace CustomTCPServerLibrary.BaseEntities
         /// </summary>
         public event Action<BaseThreadableObject, Exception>? StartingExceptionThrowingEvent;
         /// <summary>
+        /// Ошибка при запуске объекта
+        /// </summary>
+        public event Action<BaseThreadableObject, Exception>? LogicLoopExceptionThrowingEvent;
+        /// <summary>
         /// Событие циклического вызова логики объекта
         /// </summary>
         public event Action<BaseThreadableObject, CancellationToken>? LogicLoopInvokeEvent;
@@ -54,6 +58,8 @@ namespace CustomTCPServerLibrary.BaseEntities
 
         public virtual bool Start()
         {
+            bool prevActivationState = IsActive;
+
             lock (_LockObject)
             {
                 if (IsActive)
@@ -77,8 +83,6 @@ namespace CustomTCPServerLibrary.BaseEntities
                 if (startingStatus)
                 {
                     _ThreadsManager.Start();
-
-                    HasStartedEvent?.Invoke(this);
                 }
                 else
                 {
@@ -86,9 +90,15 @@ namespace CustomTCPServerLibrary.BaseEntities
                 }
 
                 IsActive = startingStatus;
-
-                return IsActive;
             }
+
+            if (IsActive
+                && prevActivationState != IsActive)
+            {
+                HasStartedEvent?.Invoke(this);
+            }
+
+            return IsActive;
         }
         /// <summary>
         /// Инициализация потоков
@@ -110,10 +120,10 @@ namespace CustomTCPServerLibrary.BaseEntities
 
                 _ThreadsManager.Dispose();
 
-                HasStoppedEvent?.Invoke(this);
-
                 IsActive = false;
             }
+
+            HasStoppedEvent?.Invoke(this);
         }
         /// <summary>
         /// Инициализация потоков
@@ -131,7 +141,14 @@ namespace CustomTCPServerLibrary.BaseEntities
             // Циклическая логика
             _ThreadsManager.AddThread((token) =>
             {
-                LogicLoopInvokeEvent?.Invoke(this, token);
+                try
+                {
+                    LogicLoopInvokeEvent?.Invoke(this, token);
+                }
+                catch (Exception e)
+                {
+                    LogicLoopExceptionThrowingEvent?.Invoke(this, e);
+                }
             });
         }
         /// <summary>

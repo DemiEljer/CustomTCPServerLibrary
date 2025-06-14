@@ -55,8 +55,11 @@ namespace CustomTCPServerLibrary
                         TimeShift = GetCurrentTime() - ClientTime;
                         // Параметры меняются местами, из-за зеркальности буферов
                         DataConfigs.ReceiveDataBufferSize = _frame.TransmitDataBufferSize;
+                        DataConfigs.TransmitDataBufferSize = _frame.ReceiveDataBufferSize;
 
+                        // Обработка состояний конечных автоматов
                         _FinalStateMachine.PingMessageHasBeenReceived();
+                        _TransmittingFinalStateMachine.CheckIfAnotherPointReceiveBufferHasIncreased(_frame.ReceiveDataBufferSize);
                     }
                 }
             };
@@ -80,27 +83,30 @@ namespace CustomTCPServerLibrary
                     }
                 }
             };
-
-            _FinalStateMachine.CallPingMessageSending += () =>
-            {
-                InternalAddTransmittingData(FramesFabric.CreatePingServerToClientFrame
-                (
-                    Timings.SendingTimeout
-                    , Timings.ReceivingTimeout
-                    , GetCurrentTime()
-                    , Timings.PingInterval
-                    , Timings.PingTimeout
-                    , DataConfigs.ReceiveDataBufferSize
-                    , DataConfigs.TransmitDataBufferSize
-                ));
-            };
         }
 
         protected override bool _Start()
         {
+            _ConnectionController.ResetConnectionStatus();
+
             base._Start();
 
             return true;
+        }
+
+        protected override BaseFrame _GetPingFrame()
+        {
+            return FramesFabric.CreatePingServerToClientFrame
+            (
+                Timings.SendingTimeout
+                , Timings.ReceivingTimeout
+                , GetCurrentTime()
+                , Timings.PingInterval
+                , Timings.PingTimeout
+                , DataConfigs.ReceiveDataBufferSize
+                , DataConfigs.TransmitDataBufferSize
+                , DataConfigs.BufferIncreaseFactor
+            );
         }
     }
 }

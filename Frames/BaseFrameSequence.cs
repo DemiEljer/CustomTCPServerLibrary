@@ -17,7 +17,7 @@ namespace CustomTCPServerLibrary.Frames
         /// <summary>
         /// Код последовательности пакетов
         /// </summary>
-        [BinaryTypeUInt(64, BinarySerializerLibrary.Enums.NullableTypeEnum.Nullable)]
+        [BinaryTypeUInt(64, BinarySerializerLibrary.Enums.BinaryNullableTypeEnum.Nullable)]
         public ulong? ProtocolSignature { get; set; } = ProtocolSignatureCode;
         /// <summary>
         /// Последовательность кадров
@@ -27,7 +27,7 @@ namespace CustomTCPServerLibrary.Frames
         /// <summary>
         /// Код последовательности пакетов
         /// </summary>
-        [BinaryTypeUInt(64, BinarySerializerLibrary.Enums.NullableTypeEnum.Nullable)]
+        [BinaryTypeUInt(64, BinarySerializerLibrary.Enums.BinaryNullableTypeEnum.Nullable)]
         public ulong? PackageCode { get; set; } = null;
         /// <summary>
         /// Преобразование в вектор данных

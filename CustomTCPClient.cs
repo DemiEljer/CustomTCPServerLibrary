@@ -33,6 +33,10 @@ namespace CustomTCPServerLibrary
         /// Событие отправки сообщения
         /// </summary>
         public event Action<CustomTCPClient, byte[]>? TransmitDataEvent;
+        /// <summary>
+        /// Флаг автоматического подключения в случае разрыва соединения
+        /// </summary>
+        public bool AutoConnection { get; set; } = false;
 
         public CustomTCPClient(NetEndPoint? endPoint = null) : base(endPoint)
         {
@@ -70,8 +74,10 @@ namespace CustomTCPServerLibrary
                         // Параметры меняются местами, из-за зеркальности буферов
                         DataConfigs.ReceiveDataBufferSize = _frame.TransmitDataBufferSize;
                         DataConfigs.TransmitDataBufferSize = _frame.ReceiveDataBufferSize;
-
+                        DataConfigs.BufferIncreaseFactor = _frame.BufferIncreaseFactor;
+                        // Обработка состояний конечных автоматов
                         _FinalStateMachine.PingMessageHasBeenReceived();
+                        _TransmittingFinalStateMachine.CheckIfAnotherPointReceiveBufferHasIncreased(_frame.ReceiveDataBufferSize);
                     }
                 }
             };
@@ -96,13 +102,17 @@ namespace CustomTCPServerLibrary
                 }
             };
 
-            _FinalStateMachine.CallPingMessageSending += () =>
+            HasStoppedEvent += (_) =>
             {
-                InternalAddTransmittingData(FramesFabric.CreatePingClientToServerFrame
-                (
-                    GetCurrentTime()
-                    , DataConfigs.TransmitDataBufferSize
-                ));
+                if (AutoConnection
+                    && (ConnectionStatus == Enums.ClientConnectionStatusEnum.ConnectionFlagHasBeenResetted
+                        || ConnectionStatus == Enums.ClientConnectionStatusEnum.ConnectionError
+                        || ConnectionStatus == Enums.ClientConnectionStatusEnum.PingTimeoutHasBeenElapsed
+                        || ConnectionStatus == Enums.ClientConnectionStatusEnum.StartingException)
+                    )
+                {
+                    Start();
+                }
             };
         }
 
@@ -116,6 +126,7 @@ namespace CustomTCPServerLibrary
 
         protected override bool _Start()
         {
+            _ConnectionController.ResetConnectionStatus();
             // Проверка, что клиент был создан и есть конечная точка подключения
             if (ServerEndpoint is null)
             {
@@ -131,5 +142,24 @@ namespace CustomTCPServerLibrary
 
             return connectionInitStatus;
         }
+
+        protected override BaseFrame _GetPingFrame()
+        {
+            return FramesFabric.CreatePingClientToServerFrame
+            (
+                GetCurrentTime()
+                , DataConfigs.ReceiveDataBufferSize
+                , DataConfigs.TransmitDataBufferSize
+            );
+        }
+        /// <summary>
+        /// Полное терминирование работы клиента с выключением автоматического подключения
+        /// </summary>
+        public void Terminate()
+        {
+            AutoConnection = false;
+            Stop();
+        }
+
     }
 }

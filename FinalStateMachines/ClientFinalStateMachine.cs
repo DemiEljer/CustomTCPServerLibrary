@@ -46,26 +46,34 @@ namespace CustomTCPServerLibrary.FinalStateMachines
         /// Подтверждение, что протокол валиден
         /// </summary>
         public bool IsProtocolValid => _IsProtocolValid == true;
-
+        /// <summary>
+        /// Событие верификации протокола
+        /// </summary>
+        public event Action? ProtocolHasBeenVerifiedEvent;
+        /// <summary>
+        /// 
+        /// </summary>
         public void PingMessageHasBeenReceived()
         {
             _PingMessageReceivingTimeMark.Update();
         }
-
+        /// <summary>
+        /// 
+        /// </summary>
         public void Start()
         {
             _PingMessageReceivingTimeMark.Update();
             _IsProtocolValid = null;
         }
-
+        /// <summary>
+        /// 
+        /// </summary>
         public void Invoke()
         {
             // Вызов обработчика отправки сообщения Ping
             if (_PingMessageSendingTimeMark.HasIntervalElapsed(PingInterval))
             {
-                _PingMessageSendingTimeMark.Update();
-
-                CallPingMessageSending?.Invoke();
+                InvokePingMessageTransmitting();
             }
             // Вызов обработчика истечения времени ожидания Ping
             if (_PingMessageReceivingTimeMark.HasIntervalElapsed(PingTimeout))
@@ -73,7 +81,10 @@ namespace CustomTCPServerLibrary.FinalStateMachines
                 CallPingWaitingTimeElapsed?.Invoke();
             }
         }
-
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="isValid"></param>
         public void SetReceivingFramesValidFlag(bool isValid)
         {
             if (_IsProtocolValid is null)
@@ -84,7 +95,21 @@ namespace CustomTCPServerLibrary.FinalStateMachines
                 {
                     CallingProtocolIsNotValid?.Invoke();
                 }
+                else
+                {
+                    ProtocolHasBeenVerifiedEvent?.Invoke();
+                }
+
             }
+        }
+        /// <summary>
+        /// 
+        /// </summary>
+        public void InvokePingMessageTransmitting()
+        {
+            _PingMessageSendingTimeMark.Update();
+
+            CallPingMessageSending?.Invoke();
         }
     }
 }

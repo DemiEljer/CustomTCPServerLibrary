@@ -49,6 +49,11 @@ server.ClientHasConnectedEvent += (_, _client) =>
         _client.TransmitData(new byte[] { 0x00 });
     };
 };
+// Обработка события подтверждения протокола общения (на той стороне работает та же библиотека)
+client.ProtocolHasBeenVerifiedEvent += (_, data) =>
+{
+    Console.WriteLine($"Клиент подтвержден :: {client.EndPoint.ToString()}");
+};
 // Обработка события отключения клиента от сервера
 server.ClientHasDisconnectedEvent += (_, client) =>
 {
@@ -61,6 +66,11 @@ server.StartingExceptionThrowingEvent += (_, e) =>
 };
 // Обработка событие возникновения ошибки во внутренних потоках сервера
 server.ThreadExceptionThrowingEvent += (_, e) =>
+{
+    Console.WriteLine($"{e.ToString()}");
+};
+// Обработка события возникновения ошибки при приеме сообщения
+client.MessageReceiveExceptionThrowingEvent += (_, data) =>
 {
     Console.WriteLine($"{e.ToString()}");
 };
@@ -86,6 +96,16 @@ client.ThreadExceptionThrowingEvent += (_, e) =>
 {
     Console.WriteLine($"{e.ToString()}");
 };
+// Обработка события подтверждения протокола общения (на той стороне работает та же библиотека)
+client.ProtocolHasBeenVerifiedEvent += (_, data) =>
+{
+    Console.WriteLine($"Сервер подтвержден :: {client.EndPoint.ToString()}");
+};
+// Обработка события возникновения ошибки при приеме сообщения
+client.MessageReceiveExceptionThrowingEvent += (_, data) =>
+{
+    Console.WriteLine($"{e.ToString()}");
+};
 // Циклическая отправка данных серверу
 // (циклический вызов пользовательской логики клиента)
 client.LogicLoopInvokeEvent += (_, token) =>
@@ -97,6 +117,7 @@ client.ReceiveDataEvent += (_, data) =>
 {
     Console.WriteLine($"Клиент получил данные от сервера :: {client.EndPoint.ToString()} :: {string.Join(" ", data.Select(b => b.ToString("X2")))}");
 };
+
 // Запуск клиента
 client.Start();
 
