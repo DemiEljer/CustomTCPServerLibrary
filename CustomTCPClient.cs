@@ -107,8 +107,7 @@ namespace CustomTCPServerLibrary
                 if (AutoConnection
                     && (ConnectionStatus == Enums.ClientConnectionStatusEnum.ConnectionFlagHasBeenResetted
                         || ConnectionStatus == Enums.ClientConnectionStatusEnum.ConnectionError
-                        || ConnectionStatus == Enums.ClientConnectionStatusEnum.PingTimeoutHasBeenElapsed
-                        || ConnectionStatus == Enums.ClientConnectionStatusEnum.StartingException)
+                        || ConnectionStatus == Enums.ClientConnectionStatusEnum.PingTimeoutHasBeenElapsed)
                     )
                 {
                     Start();
